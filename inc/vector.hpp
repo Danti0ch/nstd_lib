@@ -4,12 +4,15 @@
 #include <cstdlib>
 #include <string>
 #include <stdexcept>
+#include <stdint.h>
+#include "allocation.hpp"
 
 //? Base class to bit reference (for reference at())
 //? #if _cplusplus > 2020L
 
-const size_t DEF_CAPACITY = 16;
-const size_t DEF_GROW_FACTOR = 2;
+const size_t DEF_CAPACITY    = 1 << 4;
+const size_t GROWTH_FACTOR   = 1 << 1;
+const size_t DECREASE_FACTOR = 1 << 3;
 
 namespace nstd{
 
@@ -47,8 +50,8 @@ typedef const T& const_reference;
     constexpr reference       back();
     constexpr const_reference back() const;
 
-    constexpr T*              data(size_t n_elem);
-    constexpr const T*        data(size_t n_elem) const;
+    constexpr T*              data();
+    constexpr const T*        data() const;
 
     constexpr bool            empty() const;
     constexpr size_t          size() const;
@@ -64,19 +67,22 @@ typedef const T& const_reference;
     constexpr void            push_back(T&& val);
     // TODO: emplace_back
 
-    constexpr void            pop_back();
+    constexpr T               pop_back();
     constexpr void            resize(size_t n_elems);
     constexpr void            resize(size_t n_elems, const T& val);
 
     // TODO:
     //constexpr void            swap(vector<T>& other);
 
-
 private:
 
-    T*     data_;
-    size_t size_;
-    size_t capacity_;
+    uint8_t*  data_;
+    size_t    size_;
+    size_t    capacity_;
+
+private:
+    void increase_capacity(size_t low_limit);
+    void reduce_capacity();
 };
 
 //?? TODO: make allocator class
@@ -84,30 +90,27 @@ private:
 
 template<typename T>
 constexpr vector<T>::vector():
-    data_(new T[DEF_CAPACITY]),
+    data_(new uint8_t[DEF_CAPACITY * sizeof(T)]),
     size_(0),
     capacity_(DEF_CAPACITY)
 {}
 
 template<typename T>
 constexpr vector<T>::vector(size_t size, const T& def_val):
-    data_(new T[size]),
+    data_(new uint8_t[size * sizeof(T)]),
     size_(size),
     capacity_(size)
 {
-    for(uint i = 0; i < size; i++) {
-        data_[i] = def_val;
-    }
+    set_mem<T>(data_, 0, size);
 }
 
 template<typename T>
 constexpr vector<T>::vector(const vector<T>& other):
-    data_(new T[other.size_]),
+    data_(new uint8_t[other.size_ * sizeof(T)]),
     size_(other.size_),
     capacity_(other.size_)
 {   
-    //? is OK
-    memcpy(data_, other.data_, other.size_ * sizeof(T));
+    set_mem<T>(data_, 0, static_cast<T*>(other.data_), 0, other.size_);
 }
 
 template<typename T>
@@ -122,6 +125,7 @@ constexpr vector<T>::vector(vector<T>&& other):
 
 template<typename T>
 constexpr vector<T>::~vector(){
+    clear_mem<T>(data_, 0, size_);
     delete[] data_;
     size_ = 0;
     capacity_ = 0;
@@ -148,9 +152,7 @@ template<typename T>
 constexpr void vector<T>::assign(size_t n_elems, const T& val) {
     reserve(n_elems);
 
-    for(int i = 0; i < n_elems; i++){
-        data_[i] = val;
-    }
+    set_mem<T>(data_, 0, n_elems, val);
 }
 
 // TODO: remove copypaste
@@ -161,7 +163,7 @@ constexpr typename vector<T>::reference vector<T>::at(size_t n_elem) {
     if(n_elem >= size_)
         throw std::out_of_range("index %lu for vector %p out of range", n_elem, this);
 
-    return data_[n_elem];
+    return data()[n_elem];
 }
 
 template<typename T>
@@ -169,7 +171,7 @@ constexpr typename vector<T>::const_reference vector<T>::at(size_t n_elem) const
     if(n_elem >= size_)
         throw std::out_of_range("index %lu for vector %p out of range", n_elem, this);
 
-    return data_[n_elem];
+    return data()[n_elem];
 }
 
 template<typename T>
@@ -204,16 +206,14 @@ constexpr  typename vector<T>::const_reference vector<T>::back() const {
 
 // TODO: copypaste
 template<typename T>
-constexpr T* vector<T>::data(size_t n_elem) {
+constexpr T* vector<T>::data() {
 
-    if(n_elem >= size_) throw std::out_of_range("index %lu for vector %p out of range", n_elem, this);
-    return data_ + n_elem;
+    return static_cast<T*>(data_);
 }
 
 template<typename T>
-constexpr const T* vector<T>::data(size_t n_elem) const {
-    if(n_elem >= size_) throw std::out_of_range("index %lu for vector %p out of range", n_elem, this);
-    return data_ + n_elem;
+constexpr const T* vector<T>::data() const {
+    return static_cast<const T*>(data_); //? reinterpret_cast??
 }
 
 template<typename T>
@@ -233,7 +233,7 @@ constexpr void vector<T>::reserve(size_t capacity) {
 
     if(capacity_ == 0) {
         //?
-        data_ = new T[capacity];
+        data_ = new uint8_t[capacity * sizeof(T)];
     }
 
     increase_capacity(capacity);
@@ -252,6 +252,7 @@ constexpr void vector<T>::shrink_to_fit() const {
 
     // TODO: fix ))
     vector<T> tmp = *this;
+    clear_mem(data_, 0, size_);
     delete[] data_;
     *this = std::move(tmp);
 }
@@ -275,7 +276,7 @@ constexpr void vector<T>::push_back(const T& val) {
         increase_capacity(capacity_ + 1);
     }
 
-    data_[size_++] = T(val);
+    *(T*)(data_ + (size_++) * sizeof(T)) = val;
 }
 
 template<typename T>
@@ -287,35 +288,42 @@ constexpr void vector<T>::push_back(T&& val) {
         increase_capacity(capacity_ + 1);
     }
 
-    data_[size_++] = T(std::move(val));
+    *(T*)(data_ + (size_++) * sizeof(T)) = std::move(val)
 }
 // TODO: emplace_back
 
 template<typename T>
-constexpr void vector<T>::pop_back() {
+constexpr T vector<T>::pop_back() {
     if(size_ == 0)
         throw std::out_of_range("pop_back on empty vector %p", this);
 
+    T val = data()[size_ - 1];
     data_[--size_].~T();
+
+    if((size_ - 1) * DECREASE_FACTOR >= capacity_ ) {
+        reduce_capacity();
+    }
+
+    return val;
 }
 
 template<typename T>
 constexpr void vector<T>::resize(size_t n_elems) {
     if(size_ > n_elems) {
-        clear_mem(n_elems, n_elems, size_ - n_elems);
+        clear_mem<T>(data_, n_elems, size_ - n_elems);
     }
     else if(size_ < n_elems) {
-        set_mem(data_, size_, n_elems - size_);
+        set_mem<T>(data_, size_, n_elems - size_);
     }
 }
 
 template<typename T>
 constexpr void vector<T>::resize(size_t n_elems, const T& val) {
     if(size_ > n_elems) {
-        clear_mem(n_elems, n_elems, size_ - n_elems);
+        clear_mem<T>(data_, n_elems, size_ - n_elems);
     }
     else if(size_ < n_elems) {
-        set_mem(data_, size_, n_elems - size_, val);
+        set_mem<T>(data_, size_, n_elems - size_, val);
     }
 }
 
@@ -337,6 +345,44 @@ bool operator==(const vector<T>& lhs, const vector<T>& rhs){
     }
 
     return true;
+}
+
+// TODO:
+// TODO:
+// TODO:
+// TODO:
+// TODO: optimize
+template<typename T>
+void vector<T>::increase_capacity(size_t low_limit) {
+
+    size_t new_capacity = capacity_;
+    while(new_capacity < low_limit) {
+        new_capacity *= GROWTH_FACTOR;
+    }
+
+    // TODO: remove copypaste
+    uint8_t* new_data = new uint8_t[new_capacity * sizeof(T)];
+    set_mem<T>(new_data, 0, data_, 0, size_, true);
+    //????? clear_mem(data_, 0, size);
+    data_ = new_data;
+
+    capacity_ = new_capacity;
+}
+
+template<typename T>
+void vector<T>::reduce_capacity(){
+
+    size_t new_capacity = capacity_;
+    while(size_ * DECREASE_FACTOR > new_capacity) { // TODO: optimize
+        new_capacity /= DECREASE_FACTOR;
+    }
+
+    uint8_t* new_data = new uint8_t[new_capacity * sizeof(T)];
+    set_mem<T>(new_data, 0, data_, 0, size_, true);
+    //????? clear_mem(data_, 0, size);
+    data_ = new_data;
+
+    capacity_ = new_capacity;
 }
 
 };
