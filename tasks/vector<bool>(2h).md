@@ -1,5 +1,5 @@
 [[strat]]
-- [ ] реализация vector T
+- [x] реализация vector T
 - [ ] реализация vector bool
 - [ ] почитать про constexpr
 - [ ] чекнуть почему требуется указывать typename
