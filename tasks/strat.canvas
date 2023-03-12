@@ -1,0 +1,13 @@
+{
+	"nodes":[
+		{"id":"301746571fe54e81","x":-255,"y":-680,"width":400,"height":400,"type":"file","file":"mipt_study/prog/oop/tasks/nstd_vector/tasks/allocator(4h).md"},
+		{"id":"74b6023decaccdeb","x":145,"y":-100,"width":250,"height":60,"type":"text","text":"Pool alocator"},
+		{"id":"e6eb7a02d4d10f1b","x":185,"y":60,"width":250,"height":60,"type":"text","text":"struct list\n"},
+		{"id":"fa768c07be3cbc6c","x":462,"y":58,"width":250,"height":60,"type":"text","text":"базовые методы"}
+	],
+	"edges":[
+		{"id":"af6c36caf36fac8b","fromNode":"74b6023decaccdeb","fromSide":"bottom","toNode":"e6eb7a02d4d10f1b","toSide":"top"},
+		{"id":"9f00e00f64208184","fromNode":"301746571fe54e81","fromSide":"bottom","toNode":"74b6023decaccdeb","toSide":"top"},
+		{"id":"c5e7071bd8bb343c","fromNode":"74b6023decaccdeb","fromSide":"bottom","toNode":"fa768c07be3cbc6c","toSide":"top"}
+	]
+}
