@@ -320,7 +320,7 @@ public:
     { return reverse_iterator(reinterpret_cast<T*>(data_)  - 1); }
 
     constexpr const_reverse_iterator crend() const
-    { return const_reverse_iterator(reinterpret_cast<T*>(data_) - 1аа); }
+    { return const_reverse_iterator(reinterpret_cast<T*>(data_) - 1); }
 
 private:
 
@@ -382,7 +382,7 @@ public:
 
 private:
     
-}
+};
 };
 
 #endif // NSTD_VECTOR_H

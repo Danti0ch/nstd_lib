@@ -4,6 +4,8 @@
 #include "move_semantics.hpp"
 #include <iostream>
 
+// TODO: operator++ refactor
+
 namespace nstd{
 
 //? Could it work on non pointer classes
@@ -187,76 +189,217 @@ public:
     { return other.direct_iter_.operator-(direct_iter_); }
 
     bool operator ==(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator==(other); }
+    { return direct_iter_.operator==(other.direct_iter_); }
 
     bool operator !=(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator!=(other); }
+    { return direct_iter_.operator!=(other.direct_iter_); }
 
     bool operator >(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator<(other); }
+    { return direct_iter_.operator<(other.direct_iter_); }
 
     bool operator >=(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator<=(other); }
+    { return direct_iter_.operator<=(other.direct_iter_); }
 
     bool operator <(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator>(other); }
+    { return direct_iter_.operator>(other.direct_iter_); }
 
     bool operator <=(const reverse_ra_iterator_default& other) const
-    { return direct_iter_.operator>=(other); }
+    { return direct_iter_.operator>=(other.direct_iter_); }
 
 private:
     TIter direct_iter_;
 };
 
-class bit_reference{
+struct bit_reference{
 
-public:
     bit_reference():
         p_data_(NULL),
-        mask_(0){}
+        mask_offset_(0){}
     
-    bit_reference(uint8_t* p_data, uint8_t mask):
+    bit_reference(uint8_t* p_data, uint8_t mask_offset):
         p_data_(p_data),
-        mask_(mask){}
+        mask_offset_(mask_offset){}
     
     bit_reference(const bit_reference& other) = default;
     
     ~bit_reference() {
-        p_data_ = NULL; mask_ = 0;
+        p_data_ = NULL; mask_offset_ = 0;
     }
 
     bit_reference& operator=(const bit_reference& other){
-        p_data_ = other.p_data_;
-        mask_   = other.mask_;
+        p_data_        = other.p_data_;
+        mask_offset_   = other.mask_offset_;
 
         return *this;
     }
 
     bit_reference& operator=(bool val) {
-        *p_data_ &= ~mask_;
-        *p_data_ |= val ? mask_ : ~mask_;
+        uint8_t mask = 1 << mask_offset_;
+
+        *p_data_ &= ~mask;
+        *p_data_ |= val ? mask : ~mask;
 
         return *this;
     }
 
     operator bool(){
-        return *p_data_ & mask_;
+        return *p_data_ & (1 << mask_offset_);
     }
-private:
+
     uint8_t* p_data_;
-    uint8_t  mask_;
+    uint8_t  mask_offset_;
 };
 
-class bit_pointer {
+struct bit_reference_const{
+
+    bit_reference_const():
+        p_data_(NULL),
+        mask_offset_(0){}
+    
+    bit_reference_const(const uint8_t* p_data, uint8_t mask_offset):
+        p_data_(p_data),
+        mask_offset_(mask_offset){}
+    
+    bit_reference_const(const bit_reference_const& other) = default;
+    
+    ~bit_reference_const() {
+        p_data_ = NULL; mask_offset_ = 0;
+    }
+
+    bit_reference_const& operator=(const bit_reference_const& other){
+        p_data_        = other.p_data_;
+        mask_offset_   = other.mask_offset_;
+
+        return *this;
+    }
+
+    bit_reference_const& operator=(bool val) = delete;
+
+    operator bool(){
+        return *p_data_ & (1 << mask_offset_);
+    }
+
+    const uint8_t* p_data_;
+    uint8_t  mask_offset_;
+};
+
+// TODO: remove, express by pt_like_iterator
+template<class BIT_REF>
+class bit_iterator
+{
+    //! codestyle check
+    static_assert(std::is_same_v<BIT_REF, bit_reference> || std::is_same_v<BIT_REF, bit_reference_const>, "Type of the BIT_REF could'nt be custom");
 
 public:
-    bit_pointer() = default;
-    bit_pointer(uint8_t* p_data, uint8_t mask):
-        ref_(p_data, mask){}
-    
+    typedef typename std::random_access_iterator_tag iterator_category;
+    typedef bool value_type;
+    typedef ptrdiff_t difference_type;
+    typedef BIT_REF* pointer;
+    typedef BIT_REF reference;
 
 private:
-    bit_reference ref_;
+    BIT_REF get_shifted_bitref(difference_type offset) const {
+        difference_type offset = bit_ref_.mask_offset_;
+
+        uint8_t new_mask_offset     = (bit_ref_.mask_offset_ + offset) % sizeof(uint8_t);
+        difference_type addr_offset = (bit_ref_.mask_offset_ + offset) / sizeof(uint8_t);
+
+        return BIT_REF(bit_ref_.p_data_ + addr_offset, new_mask_offset);
+    } 
+
+public:
+    bit_iterator():
+        bit_ref_(){}
+
+    bit_iterator(const BIT_REF& pt):
+        bit_ref_(pt){}
+
+    bit_iterator(const bit_iterator& other) = default;
+ 
+    bit_iterator& operator =(const bit_iterator& other) = default;
+
+    ~bit_iterator() = default;
+
+    reference operator *()
+    { return bit_ref_; }
+
+    // TODO: check
+    pointer operator ->() 
+    { return &bit_ref_; }
+
+    reference operator [](difference_type idx) { 
+        return get_shifted_bitref(idx);
+    }
+
+    bit_iterator& operator ++() {
+        if(bit_ref_.mask_offset_ == 7) {
+            bit_ref_.mask_offset_  = 0;
+            bit_ref_.p_data_      += 1;
+        } else {
+            bit_ref_.mask_offset_ += 1;
+        }
+        return *this;
+    }
+
+    bit_iterator operator ++(int)
+    { return bit_iterator(this->operator++()); }
+
+    bit_iterator& operator --() {
+        if(bit_ref_.mask_offset_ == 0) {
+            bit_ref_.mask_offset_  = 7;
+            bit_ref_.p_data_      -= 1;
+        } else {
+            bit_ref_.mask_offset_ -= 1;
+        }
+        return *this;
+    }
+
+    bit_iterator operator --(int)
+    { return bit_iterator(this->operator--()); }
+
+    bit_iterator  operator +(difference_type offset) const
+    { return bit_iterator(get_shifted_bitref(offset)); }
+
+    bit_iterator& operator +=(difference_type offset){
+        bit_ref_ = get_shifted_bitref(offset);
+        return *this;
+    }
+
+    bit_iterator operator -(difference_type offset) const
+    { return bit_iterator(get_shifted_bitref(-offset)); }
+
+    bit_iterator& operator -=(difference_type offset) {
+        bit_ref_ = get_shifted_bitref(-offset);
+        return *this;
+    }
+
+    difference_type operator -(const bit_iterator& other) const{
+        if(bit_ref_.p_data_ == other.bit_ref_.p_data_)
+            { return static_cast<difference_type>(bit_ref_.mask_offset_ - other.bit_ref_.mask_offset_); }
+
+        return static_cast<difference_type>(bit_ref_.p_data_ - other.bit_ref_.p_data_) * sizeof(uint8_t) + bit_ref_.mask_offset_ + sizeof(uint8_t) - 1 - other.bit_ref_.mask_offset_;
+    }
+
+    bool operator ==(const bit_iterator& other) const
+    { return bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ == other.bit_ref_.mask_offset_; }
+
+    bool operator !=(const bit_iterator& other) const
+    { return !(bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ == other.bit_ref_.mask_offset_); }
+
+    bool operator >(const bit_iterator& other) const
+    { return bit_ref_.p_data_ > other.bit_ref_.p_data_ || (bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ > other.bit_ref_.mask_offset_); }
+
+    bool operator >=(const bit_iterator& other) const
+    { return bit_ref_.p_data_ >= other.bit_ref_.p_data_ || (bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ >= other.bit_ref_.mask_offset_); }
+
+    bool operator <(const bit_iterator& other) const
+    { return bit_ref_.p_data_ < other.bit_ref_.p_data_ || (bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ < other.bit_ref_.mask_offset_); }
+
+    bool operator <=(const bit_iterator& other) const
+    { return bit_ref_.p_data_ <= other.bit_ref_.p_data_ || (bit_ref_.p_data_ == other.bit_ref_.p_data_ && bit_ref_.mask_offset_ <= other.bit_ref_.mask_offset_); }
+
+private:
+   BIT_REF bit_ref_;
 };
 
 }; // namespace nstd
