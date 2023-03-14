@@ -377,12 +377,188 @@ std::ostream& operator<<(std::ostream& stream, const vector<T>& v) {
 
 template <>
 class vector<bool> {
+public:
+    typedef bit_iterator<bit_reference>                iterator;
+    typedef bit_iterator<bit_reference_const>          const_iterator;
+    typedef bit_iterator_reverse<bit_reference>        reverse_iterator;
+    typedef bit_iterator_reverse<bit_reference_const>  const_reverse_iterator;
+
+    typedef bit_reference         reference;
+    typedef bit_reference_const   const_reference;
 
 public:
+    constexpr vector<bool>():
+        data_(new uint8_t[DEF_CAPACITY]),
+        size_(0),
+        capacity_(DEF_CAPACITY)
+    {}
+
+    constexpr explicit vector<bool>(size_t size, bool def_val = false):
+        data_(new uint8_t[convert_size(size)]),
+        size_(size),
+        capacity_(convert_size(size))
+    {
+        set_mem<bool>(data_, 0, size, def_val);
+    }
+
+    constexpr vector<bool>(const vector<bool>& other):
+        data_(new uint8_t[convert_size(other.size_)]),
+        size_(other.size_),
+        capacity_(convert_size(other.size_))
+    {   
+        set_mem<bool>(data_, 0, other.data_, 0, other.size_);
+    }
+
+    constexpr vector<bool>(vector<bool>&& other):
+        data_(other.data_),
+        size_(other.size_),
+        capacity_(other.capacity_)
+    {
+        other.data_ = NULL;
+        other.size_ = other.capacity_ = 0;
+    }
+
+    constexpr ~vector<bool>() {
+        delete[] data_;
+        size_ = 0;
+        capacity_ = 0;
+    }
+
+    constexpr vector<bool>& operator=(const vector<bool>& other){
+        vector<bool> tmp = other;
+        *this = nstd::move(tmp);
+        
+        return *this;
+    }
+
+    constexpr vector<bool>& operator=(vector<bool>&& other){
+        //? is ok
+        // TODO: swap
+        data_ = other.data_;
+        size_ = other.size_;
+        capacity_ = other.capacity_;
+
+        return *this;
+    }
+
+    constexpr void assign(size_t n_elems, bool val) {
+        reserve(n_elems);
+
+        set_mem<bool>(data_, 0, n_elems, val);
+    }
+
+    constexpr reference at(size_t n_elem){
+        if(n_elem >= size_)
+            throw std::out_of_range("out of range");
+
+        return data()[n_elem];
+    }
+
+    constexpr const_reference at(size_t n_elem) const{
+        if(n_elem >= size_)
+            throw std::out_of_range("index %lu for vector %p out of range", n_elem, this);
+
+        return data()[n_elem];
+    }
+
+    constexpr reference operator[](size_t n_elem)
+    { return at(n_elem); }
+
+    constexpr const_reference operator[](size_t n_elem) const
+    { return at(n_elem); }
+
+    constexpr reference front()
+    { return at(0); }
+
+    constexpr const_reference front() const
+    { return at(0); }
+    
+    constexpr reference back()
+    { return at(size_ - 1); }
+
+    constexpr const_reference back() const
+    { return at(size_ - 1); }
+
+    //?
+    // constexpr void data() = delete;
+
+    constexpr bool empty() const
+    { return size_ == 0; }
+
+    constexpr size_t size() const
+    { return size_; }
+
+    constexpr void reserve(size_t capacity) {
+        if(capacity <= capacity_) return;
+
+        if(capacity_ == 0) {
+            data_ = new uint8_t[capacity];
+        }
+
+        increase_capacity(capacity);
+        capacity_ = capacity;
+    }
+
+    constexpr size_t capacity() const
+    { return capacity_; }
+
+    constexpr void shrink_to_fit() {
+        if(capacity_ == size_) return;
+
+        // TODO: fix ))
+        vector<bool> tmp = *this;
+        clear_mem<T>(data_, 0, size_);
+        delete[] data_;
+        *this = nstd::move(tmp);
+        tmp.data_ = NULL;
+    }
 
 private:
-    
+
+    uint8_t*  data_;
+    size_t    size_;
+    size_t    capacity_;
+
+private:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO:
+    // TODO: optimize
+    void increase_capacity(size_t low_limit) {
+
+        size_t new_capacity = capacity_;
+        while(new_capacity < low_limit) {
+            new_capacity *= GROWTH_FACTOR;
+        }
+
+        // TODO: remove copypaste
+        uint8_t* new_data = new uint8_t[new_capacity];
+        set_mem<bool>(new_data, 0, data_, 0, size_, true);
+        //????? clear_mem(data_, 0, size);
+        data_ = new_data;
+
+        capacity_ = new_capacity;
+    }
+
+    void reduce_capacity(){
+        size_t new_capacity = capacity_;
+        while(size_ * DECREASE_FACTOR > new_capacity) { // TODO: optimize
+            new_capacity /= DECREASE_FACTOR;
+        }
+
+        uint8_t* new_data = new uint8_t[new_capacity];
+        set_mem<bool>(new_data, 0, data_, 0, size_, true);
+        //????? clear_mem(data_, 0, size);
+        data_ = new_data;
+
+        capacity_ = new_capacity;
+    }
+
+    size_t convert_size(size_t size)
+        { return ((size + sizeof(uint8_t) - 1) / sizeof(uint8_t)); }
 };
+
 };
 
 #endif // NSTD_VECTOR_H

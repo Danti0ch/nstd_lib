@@ -40,5 +40,6 @@ int main(){
     //test1();
     test2();
 
+    std::vector<bool>
     return 0;
 }

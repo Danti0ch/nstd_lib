@@ -207,6 +207,8 @@ public:
     { return direct_iter_.operator>=(other.direct_iter_); }
 
 private:
+
+    //! is ok
     TIter direct_iter_;
 };
 
@@ -283,13 +285,16 @@ struct bit_reference_const{
     uint8_t  mask_offset_;
 };
 
+template<class BIT_REF> class bit_iterator_reverse;
+
 // TODO: remove, express by pt_like_iterator
 template<class BIT_REF>
 class bit_iterator
 {
     //! codestyle check
     static_assert(std::is_same_v<BIT_REF, bit_reference> || std::is_same_v<BIT_REF, bit_reference_const>, "Type of the BIT_REF could'nt be custom");
-
+    
+    friend class bit_iterator_reverse;
 public:
     typedef typename std::random_access_iterator_tag iterator_category;
     typedef bool value_type;
@@ -400,6 +405,111 @@ public:
 
 private:
    BIT_REF bit_ref_;
+};
+
+template<class BIT_REF>
+class bit_iterator_reverse
+{
+    //! codestyle check
+    static_assert(std::is_same_v<BIT_REF, bit_reference> || std::is_same_v<BIT_REF, bit_reference_const>, "Type of the BIT_REF could'nt be custom");
+
+public:
+    typedef typename std::random_access_iterator_tag iterator_category;
+    typedef bool value_type;
+    typedef ptrdiff_t difference_type;
+    typedef BIT_REF* pointer;
+    typedef BIT_REF reference;
+
+private:
+    BIT_REF get_shifted_bitref(difference_type offset) const {
+        difference_type offset = direct_iter_.bit_ref_.mask_offset_;
+
+        uint8_t new_mask_offset     = (direct_iter_.bit_ref_.mask_offset_ + offset) % sizeof(uint8_t);
+        difference_type addr_offset = (direct_iter_.bit_ref_.mask_offset_ + offset) / sizeof(uint8_t);
+
+        return BIT_REF(direct_iter_.bit_ref_.p_data_ + addr_offset, new_mask_offset);
+    } 
+
+public:
+    bit_iterator_reverse():
+        direct_iter_(){}
+
+    bit_iterator_reverse(const BIT_REF& pt):
+        direct_iter_(pt){}
+
+    bit_iterator_reverse(const bit_iterator_reverse& other) = default;
+ 
+    bit_iterator_reverse& operator =(const bit_iterator_reverse& other) = default;
+
+    ~bit_iterator_reverse() = default;
+
+    reference operator *()
+    { return direct_iter_.bit_ref_; }
+
+    // TODO: check
+    pointer operator ->() 
+    { return &(direct_iter_.bit_ref_); }
+
+    reference operator [](difference_type idx) { 
+        return get_shifted_bitref(-idx);
+    }
+
+    bit_iterator_reverse& operator ++() {
+        direct_iter_.operator--();
+        return *this;
+    }
+
+    bit_iterator_reverse operator ++(int)
+    { return bit_iterator_reverse(this->operator++()); }
+
+    bit_iterator_reverse& operator --() {
+        direct_iter_.operator--();
+        return *this;
+    }
+
+    bit_iterator_reverse operator --(int)
+    { return bit_iterator_reverse(this->operator--()); }
+
+    bit_iterator_reverse  operator +(difference_type offset) const
+    { return bit_iterator_reverse(get_shifted_bitref(-offset)); }
+
+    bit_iterator_reverse& operator +=(difference_type offset){
+        direct_iter_.bit_ref_ = get_shifted_bitref(-offset);
+        return *this;
+    }
+
+    bit_iterator_reverse operator -(difference_type offset) const
+    { return bit_iterator_reverse(get_shifted_bitref(offset)); }
+
+    bit_iterator_reverse& operator -=(difference_type offset) {
+        direct_iter_.bit_ref_ = get_shifted_bitref(offset);
+        return *this;
+    }
+
+    difference_type operator -(const bit_iterator_reverse& other) const{
+        return other.direct_iter_ - direct_iter_;
+    }
+
+    bool operator ==(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator==(other.direct_iter_); }
+
+    bool operator !=(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator!=(other.direct_iter_); }
+
+    bool operator >(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator<(other.direct_iter_); }
+
+    bool operator >=(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator<=(other.direct_iter_); }
+
+    bool operator <(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator>(other.direct_iter_); }
+
+    bool operator <=(const bit_iterator_reverse& other) const
+    { return direct_iter_.operator>=(other.direct_iter_); }
+
+private:
+   bit_iterator direct_iter_;
 };
 
 }; // namespace nstd
