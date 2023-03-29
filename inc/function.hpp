@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <memory>
 
-// TODO: implement shared_ptr
+// TODO: implement static checks
 
 namespace nstd
 {
@@ -20,18 +20,25 @@ public:
     function() :
         storage_() {}
     
-    function(TFuncPt func_pt) :
-        storage_(new function_storage(func_pt)) {}
-
     template<class T_FUNCTOR>
     function(T_FUNCTOR functor) :
-        storage_(new functor_object_storage<T_FUNCTOR>(functor)) {}
+        storage_(new functor_storage<T_FUNCTOR>(functor)) {}
     
-    function(function& other) :
+    template<class T_OBJECT, class T_FUNCTOR>
+    function(T_FUNCTOR T_OBJECT::*functor) :
+        storage_(new member_functor_storage<T_FUNCTOR, ArgTs...>(functor)) {}
+    
+    function(const function& other) :
         storage_(other.storage_){}
     
-    function(function&& other) :
-        storage_()
+    // TODO: move constructor
+
+    function& operator=(const function& other) {
+        storage_ = other.storage_;
+
+        return *this;
+    }
+
     RetT operator()(ArgTs... args) {
         if(!storage_) throw std::runtime_error("function is not initialized");
 
@@ -46,32 +53,34 @@ public:
     virtual RetT operator()(ArgTs...) = 0;
 };
 
-class function_storage : public storage_base {
-public:
-    function_storage(TFuncPt func_pt) :
-        func_pt_(func_pt) {}
-
-    RetT operator()(ArgTs... args) override {
-        assert(func_pt_); 
-
-        return func_pt_(args...); 
-    }
-    
-private:
-    TFuncPt func_pt_;
-};
-
 template<class T_FUNCTOR>
-class functor_object_storage : public storage_base{
+class functor_storage : public storage_base{
 public:
-    functor_object_storage(T_FUNCTOR functor):
+    functor_storage(T_FUNCTOR functor):
         functor_(functor) {}
+
+    functor_storage(const functor_storage& other) = delete;
+    functor_storage& operator =(const functor_storage& other) = delete;
 
     RetT operator()(ArgTs... args) override
      { return functor_(args...); }
-    
+
 private:
     T_FUNCTOR functor_;
+};
+
+template<class T_FUNCTOR, class T_OBJECT, typename ... RestArgumentTypes>
+class member_functor_storage : public storage_base{
+    typedef T_FUNCTOR T_OBJECT::* T_MEMBER_FUNC;
+public:
+    member_functor_storage(T_MEMBER_FUNC member_functor) :
+        member_functor_(member_functor){}
+    
+    RetT operator()(T_OBJECT obj, RestArgumentTypes... args) override
+     { return (obj.*member_functor_)(args...);}
+
+private:
+    T_MEMBER_FUNC member_functor_;
 };
 
 private:
