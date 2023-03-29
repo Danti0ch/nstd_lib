@@ -2,36 +2,38 @@
 #define ALLOCATOR_H
 
 #include <string.h>
+#include <type_traits>
+#include <assert.h>
+#include <stdint.h>
+#include "move_semantics.hpp"
+
+typedef unsigned int uint;
 
 //? is it a good idea for allocators make the option for reallocating storage in allocator or maybe it's better to implement chunk tactic from https://habr.com/ru/post/505632/
 
 //? maybe there could be implementation with multiple values in one block
-template<class T, size_t N_BLOCKS>
+
+// TODO:  select_on_container_copy_construction(alloc_traits)
+namespace nstd{
+
+//template<uint N_BLOCKS, class T>
+
+static const uint N_BLOCKS = 10000;
+
+template<class T>
 class PoolAllocator
 {
-    static_assert(!std::is_same_v<T, void>, "Type of the allocator can not be void");
-    static_assert(N_BLOCKS > 0, "specialize N_BLOCKS > 0");
+    static_assert(!std::is_same<T, void>(), "Type of the allocator can not be void");
 
     // static_assert(sizeof(T) > sizeof(chunk_list), "size of the block is too small, not supporting in current realization");
-
 public:
     typedef T value_type;
 
-    PoolAllocator() = delete;
-
     //? is adding allignment required
-    PoolAllocator(size_t n_init_blocks) {
-        assert(n_init_blocks > 0 && "allocator doesn't support empty storage");
-        
-        data_ = new uint8_t[sizeof(T) * n_init_blocks];
-        n_blocks_ = n_init_blocks;
-        free_chunks_ = new (data_) chunk_list(n_init_blocks);
-    }
-        
+    PoolAllocator() = default;
+
     //? meaning
-    PoolAllocator(const PoolAllocator& other):
-        PoolAllocator(other.n_blocks_)
-    { memcpy(data_, other.data_, other.n_blocks_ * sizeof(T)); }
+    PoolAllocator(const PoolAllocator& other){}
 
     /// allocate array of value_type, which size in count_objects
     T* allocate(size_t count_objects) {
@@ -70,7 +72,7 @@ public:
         
         size_t diff = chunk_to_deallocate_begin - data_;
         if(diff % sizeof(T) != 0)
-            return          // TODO: throw except
+            return;          // TODO: throw except
         
         if(free_chunks_ == NULL) {
             free_chunks_ = new (chunk_to_deallocate_begin) chunk_list(count_objects);
@@ -84,6 +86,7 @@ public:
             return;
         }
 
+        // Todo: reduce
         while(cur_chunk != NULL) {
             uint8_t* cur_chunk_begin = reinterpret_cast<uint8_t*>(cur_chunk);
             uint8_t* cur_chunk_end   = cur_chunk_begin + cur_chunk->n_blocks_ * sizeof(T);
@@ -177,22 +180,6 @@ private:
             return new_obj;
         }
 
-        chunk_list* insert_after(uint8_t* placement_pos, uint n_blocks) {
-
-            //? is performance ok, maybe just direct cast to chunk_list*
-            chunk_list* new_obj = new (placement_pos) chunk_list(n_blocks);
-
-            new_obj->next_ = next_;
-            new_obj->prev_ = this;
-
-            if(new_obj->next_) {
-                new_obj->next_->prev_ = new_obj;
-            }
-
-            this->next_ = new_obj;
-            return new_obj;
-        }
-
         void insert_before(uint8_t* placement_pos, uint n_blocks) {
 
             //? is performance ok, maybe just direct cast to chunk_list*
@@ -209,51 +196,81 @@ private:
         }
 
         //            FIELDS             //
-        chunk_list* next_, prev_;
+        chunk_list* next_;
+        chunk_list* prev_;
         uint n_blocks_;
     };
 
 private:
-    uint8_t*    data_;
-    chunk_list* free_chunks_;
+    uint8_t     data_[N_BLOCKS];
+    chunk_list* free_chunks_ = new (data_) chunk_list(N_BLOCKS);
 };
 
 //? is it a good idea for allocators make the option for reallocating storage in allocator or maybe it's better to implement chunk tactic from https://habr.com/ru/post/505632/
+#include <stdio.h>
+
+static const uint N_ELEMS = 20 * 1000;
 
 template<class T>
 class StackAllocator
 {
-    static_assert(!std::is_same_v<T, void>, "Type of the allocator can not be void");
+    static_assert(!std::is_same<T, void>(), "Type of the allocator can not be void");
 
 public:
     typedef T value_type;
 
-    StackAllocator() = delete;
+    StackAllocator():
+        free_(data_){}
 
-    StackAllocator(size_t size) {
-        assert(size > 0 && "allocator doesn't support empty storage");
-
-        data_ = new uint8_t[size * sizeof(T)];
-        free_block_ = data_;
-        *free_block = ???;
-    }
-
-    // TODO: StackAllocator(const StackAllocator& other){}
+    StackAllocator(const StackAllocator& other){}
 
     T* allocate(size_t count_objects) {
+
+        if(free_ + count_objects * sizeof(T) + sizeof(uint32_t) > data_ + N_ELEMS * sizeof(T))
+            return NULL;
         
+        *reinterpret_cast<uint32_t*>(free_) = count_objects;
+
+        T* allocated_area = reinterpret_cast<T*>(free_ + sizeof(uint32_t));
+        free_ += sizeof(uint32_t) + count_objects * sizeof(T);
+
+        return allocated_area;
     }
+
+    void deallocate(T* ptr, size_t count_objects) {
+        
+        uint8_t* casted_ptr = reinterpret_cast<uint8_t*>(ptr);
+
+        if(casted_ptr + count_objects * sizeof(T) != free_){
+            assert(0);
+        }
+
+        free_ = casted_ptr - sizeof(uint32_t);
+    }
+
 private:
-    uint8_t*    data_;
-    uint8_t*    free_block_;
+    uint8_t     data_[N_ELEMS];
+    uint8_t*    free_;
 };
 
-//? meaning
 /*
-    template<class T, class U>
-    bool operator==(const Allocator<T>&, const Allocator<U>&);
-    template<class T, class U>
-    bool operator!=(const Allocator<T>&, const Allocator<U>&);
+template<class T, class U>
+bool operator==(const PoolAllocator<T>&, const PoolAllocator<U>&)
+{ return true; }
+
+template<class T, class U>
+bool operator!=(const PoolAllocator<T>&, const PoolAllocator<U>&)
+{ return false; }
+
+template<class T, class U>
+bool operator==(const StackAllocator<T>&, const StackAllocator<U>&)
+{    return true; }
+
+template<class T, class U>
+bool operator!=(const StackAllocator<T>&, const StackAllocator<U>&)
+{ return false; }
 */
+
+};
 
 #endif // ALLOCATOR_H

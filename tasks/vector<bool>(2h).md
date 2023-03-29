@@ -1,4 +1,4 @@
-[[strat]]
+[[mipt_study/prog/oop/tasks/strat]]
 - [x] реализация vector T
 - [ ] реализация vector bool
 - [ ] почитать про constexpr

@@ -1,7 +1,9 @@
 #include <iostream>
 #include "vector.hpp"
+#include "vector_bool.hpp"
 #include <iterator>
 #include <vector>
+#include "allocator.hpp"
 
 void test1() {
     nstd::vector<int> a(4, 1);
@@ -19,8 +21,6 @@ void test1() {
     
     std::cout << "a: " << a << "\n";
     std::cout << "b: " << b << "\n"; 
-
-    std::vector<std::vector<int>> v;
 }
 
 void test2() {
@@ -35,11 +35,48 @@ void test2() {
     std::cout << "a: " << a << "\n";
 }
 
+void test3() {
+    
+    nstd::vector<int> a;
+
+    for(int i = 0; i < 20000; i++){
+        a.push_back(i);
+    }
+
+    std::cout << "wtf\n";
+    for(int i = 0; i < 20000; i++){
+        std::cout << a[i] << " ";
+    }
+
+    std::cout << "qqq\n";
+}
+
+void test4() {
+
+    nstd::vector<bool> v(12, false);
+    std::cout << v.capacity() << "\n";
+}
+
+void test5() {
+
+    nstd::vector<bool> v;
+    
+    v.push_back(true);
+    v.push_back(false);
+    v.push_back(true);
+    v.push_back(false);
+
+    for(nstd::vector<bool>::iterator it = v.begin(); it != v.end(); it++) {
+        std::cout << (int)*it << " ";
+    }
+    std::cout << "\n";
+    std::cout << v.capacity() << "\n";
+}
+
 int main(){
 
     //test1();
-    test2();
+    test5();
 
-    std::vector<bool>
     return 0;
 }
