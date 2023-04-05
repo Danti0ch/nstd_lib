@@ -20,6 +20,9 @@ public:
     function() :
         storage_() {}
     
+    function(nullptr_t) :
+        function(){}
+    
     template<class T_FUNCTOR>
     function(T_FUNCTOR functor) :
         storage_(new functor_storage<T_FUNCTOR>(functor)) {}
@@ -31,18 +34,61 @@ public:
     function(const function& other) :
         storage_(other.storage_){}
     
-    // TODO: move constructor
-
+    function(function&& other) :
+        storage_(std::move(other.storage_)){}
+    
     function& operator=(const function& other) {
-        storage_ = other.storage_;
-
+        function(other).swap(*this);
         return *this;
     }
 
-    RetT operator()(ArgTs... args) {
+    function& operator=(function&& other) {
+        function(std::move(other)).swap(*this);
+        return *this;
+    }
+
+    template<class T_FUNCTOR>
+    function& operator=(T_FUNCTOR functor) {
+        function(functor).swap(*this);
+        return *this;
+    }
+
+    template<class T_OBJECT, class T_FUNCTOR>
+    function& operator=(T_FUNCTOR T_OBJECT::*functor){ 
+        function(functor).swap(*this);
+        return *this;
+    }
+    
+    function& operator=(nullptr_t) {
+        storage_.reset();
+        return *this;
+    }
+
+    RetT operator()(ArgTs... args) const {
         if(!storage_) throw std::runtime_error("function is not initialized");
 
         return storage_->operator()(args...);
+    }
+    
+    void swap(function& other)
+    { storage_.swap(other.storage_); }
+    
+    operator bool() const
+    { return storage_.operator bool(); }
+
+    const std::type_info& target_type() const {
+        return storage_->type();
+    }
+
+    template<class T>
+    T* target() {
+        const_cast<T*>(target());
+    }
+
+    template<class T>
+    const T* target() {
+        if(target_type() == typeid(T)) return storage_.get();
+        return nullptr;
     }
     
 private:
@@ -50,7 +96,8 @@ private:
 class storage_base{
 public:
     virtual ~storage_base() {}
-    virtual RetT operator()(ArgTs...) = 0;
+    virtual RetT operator()(ArgTs...) const = 0;
+    virtual const std::type_info& type() const = 0;
 };
 
 template<class T_FUNCTOR>
@@ -62,9 +109,13 @@ public:
     functor_storage(const functor_storage& other) = delete;
     functor_storage& operator =(const functor_storage& other) = delete;
 
-    RetT operator()(ArgTs... args) override
+    RetT operator()(ArgTs... args) const override
      { return functor_(args...); }
 
+    const std::type_info& type() const override
+    { return typeid(T_FUNCTOR); }
+    
+    
 private:
     T_FUNCTOR functor_;
 };
@@ -75,9 +126,15 @@ class member_functor_storage : public storage_base{
 public:
     member_functor_storage(T_MEMBER_FUNC member_functor) :
         member_functor_(member_functor){}
-    
-    RetT operator()(T_OBJECT obj, RestArgumentTypes... args) override
-     { return (obj.*member_functor_)(args...);}
+  
+    // RetT operator()(T_OBJECT obj, RestArgumentTypes... args) override
+    //  { return (obj.*member_functor_)(args...); }
+
+    RetT operator()(T_OBJECT obj, RestArgumentTypes... args) const override
+     { return (obj.*member_functor_)(args...); }
+
+    const std::type_info& type() const
+    { return typeid(T_MEMBER_FUNC); }
 
 private:
     T_MEMBER_FUNC member_functor_;
@@ -86,6 +143,28 @@ private:
 private:
     std::shared_ptr<storage_base> storage_;
 };
+
+template<typename RetT, typename...  ArgTs>
+void swap(function<RetT(ArgTs...)> &f1, function<RetT(ArgTs...)> &f2) {
+    f1.swap(f2);
+}
+
+template<typename RetT, typename...  ArgTs>
+bool operator ==(const function<RetT(ArgTs...)> &f, nullptr_t)
+{ return !static_cast<bool>(f); }
+
+template<typename RetT, typename...  ArgTs>
+bool operator ==(nullptr_t, const function<RetT(ArgTs...)> &f)
+{ return !static_cast<bool>(f); }
+
+
+template<typename RetT, typename...  ArgTs>
+bool operator !=(const function<RetT(ArgTs...)> &f, nullptr_t)
+{ return static_cast<bool>(f); }
+
+template<typename RetT, typename...  ArgTs>
+bool operator !=(nullptr_t, const function<RetT(ArgTs...)> &f)
+{ return static_cast<bool>(f); }
 
 };
 
